@@ -1,0 +1,1173 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>נינג'ה טיימר - מדידת זמנים ודירוג</title>
+    <!-- טעינת Tailwind CSS לעיצוב רספונסיבי ומהיר -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- טעינת גופן עברי מודרני וברור (Heebo) וגופן מספרים (JetBrains Mono) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;600;700;900&family=JetBrains+Mono:wght@700;800&display=swap" rel="stylesheet">
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Heebo', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    },
+                    colors: {
+                        ninja: {
+                            bg: '#090d16',
+                            card: '#111827',
+                            surface: '#1f2937',
+                            accent: '#f97316',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        /* התאמות מיוחדות לחוויית מובייל ומניעת בחירת טקסט מקרית בלחיצות מהירות */
+        body {
+            background-color: #090d16;
+            color: #f8fafc;
+            -webkit-tap-highlight-color: transparent;
+            user-select: none;
+        }
+
+        input, textarea {
+            user-select: text;
+        }
+
+        /* מניעת קפיצת ספרות בשעון העצר */
+        .tabular-nums {
+            font-variant-numeric: tabular-nums;
+        }
+
+        /* אנימציית פעימה למיקרופון בזמן האזנה */
+        @keyframes pulse-ring {
+            0% {
+                transform: scale(0.95);
+                box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+            }
+            70% {
+                transform: scale(1);
+                box-shadow: 0 0 0 14px rgba(239, 68, 68, 0);
+            }
+            100% {
+                transform: scale(0.95);
+                box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+            }
+        }
+
+        .mic-listening {
+            animation: pulse-ring 1.5s infinite;
+            background-color: #dc2626 !important;
+            border-color: #fca5a5 !important;
+        }
+
+        /* גלילה חלקה לטבלה רחבה עם ריבוי סבבים */
+        .table-container::-webkit-scrollbar {
+            height: 6px;
+        }
+        .table-container::-webkit-scrollbar-track {
+            background: #111827;
+            border-radius: 8px;
+        }
+        .table-container::-webkit-scrollbar-thumb {
+            background: #374151;
+            border-radius: 8px;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col justify-between bg-ninja-bg text-slate-100 antialiased">
+
+    <!-- סרגל עליון (Header) -->
+    <header class="sticky top-0 z-30 bg-ninja-card/95 backdrop-blur-md border-b border-slate-800 px-4 py-3 shadow-lg">
+        <div class="max-w-2xl mx-auto flex items-center justify-between">
+            <div class="flex items-center gap-2.5">
+                <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-orange-500 to-red-600 flex items-center justify-center shadow-md shadow-orange-500/20">
+                    <!-- אייקון סטופר / נינג'ה -->
+                    <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                </div>
+                <div>
+                    <h1 class="text-lg font-black tracking-tight leading-none text-white">נינג'ה טיימר</h1>
+                    <span id="wake-lock-badge" class="text-[11px] text-emerald-400 font-medium hidden">● מסך פעיל ברציפות</span>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-2">
+                <span id="header-round-badge" class="px-3 py-1 rounded-full bg-orange-500/20 border border-orange-500/40 text-orange-400 font-bold text-sm">
+                    סבב 1
+                </span>
+                <button id="btn-open-reset" type="button" title="איפוס אימון" class="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-rose-400 transition-colors">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- אזור הודעות צפות (Toast Notification) -->
+    <div id="toast-container" class="fixed top-16 left-1/2 -translate-x-1/2 z-50 w-[92%] max-w-md pointer-events-none flex flex-col gap-2"></div>
+
+    <!-- ========================================== -->
+    <!-- מסך 1: מסך אימון פעיל (שעון עצר וטבלה חיה) -->
+    <!-- ========================================== -->
+    <main id="screen-training" class="flex-1 max-w-2xl w-full mx-auto px-4 py-4 flex flex-col gap-4">
+
+        <!-- כרטיס הזנת מתאמן + שעון עצר -->
+        <section class="bg-ninja-card border border-slate-800 rounded-3xl p-4 sm:p-5 shadow-xl flex flex-col gap-4">
+            
+            <!-- שורת הזנת שם ומיקרופון -->
+            <div class="flex flex-col gap-2">
+                <div class="flex items-center justify-between">
+                    <label for="athlete-name-input" class="text-xs font-bold uppercase tracking-wider text-slate-400">שם המתאמן על המסלול</label>
+                    <span id="speech-status-text" class="text-xs font-semibold text-orange-400 h-4"></span>
+                </div>
+                
+                <div class="flex gap-2 items-stretch">
+                    <div class="relative flex-1">
+                        <input 
+                            type="text" 
+                            id="athlete-name-input" 
+                            placeholder="הקלד או הקלט שם..." 
+                            autocomplete="off"
+                            class="w-full h-14 bg-slate-900/90 border-2 border-slate-700 focus:border-orange-500 rounded-2xl px-4 pl-10 text-lg font-bold text-white placeholder-slate-500 outline-none transition-colors"
+                        >
+                        <!-- כפתור ניקוי שדה שם -->
+                        <button id="btn-clear-name" type="button" class="hidden absolute left-2.5 top-1/2 -translate-y-1/2 p-1.5 text-slate-400 hover:text-white rounded-lg">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                        </button>
+                    </div>
+
+                    <!-- כפתור מיקרופון גדול -->
+                    <button 
+                        id="btn-mic" 
+                        type="button" 
+                        aria-label="הקלט שם מתאמן"
+                        class="h-14 px-4 sm:px-5 rounded-2xl bg-indigo-600 hover:bg-indigo-500 active:scale-95 border-2 border-indigo-400/30 text-white font-bold flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/20 transition-all shrink-0"
+                    >
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                        </svg>
+                        <span class="hidden sm:inline">הקלט שם</span>
+                    </button>
+                </div>
+
+                <!-- בחירה מהירה של מתאמנים שכבר רשומים (Chips) -->
+                <div id="quick-athletes-wrapper" class="hidden pt-1">
+                    <div class="text-[11px] text-slate-400 mb-1.5 font-medium">בחירה מהירה מרשימת המתאמנים:</div>
+                    <div id="quick-athletes-list" class="flex flex-wrap gap-1.5"></div>
+                </div>
+            </div>
+
+            <!-- תצוגת שעון העצר -->
+            <div class="bg-slate-950/90 border border-slate-800/90 rounded-2xl py-5 px-3 flex flex-col items-center justify-center relative overflow-hidden">
+                <div id="timer-status-pill" class="text-xs font-bold px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-400 mb-1">
+                    מוכן להזנקה
+                </div>
+                <div id="timer-display" class="font-mono text-5xl sm:text-6xl font-extrabold tracking-tight tabular-nums text-white select-none" dir="ltr">
+                    00:00.00
+                </div>
+            </div>
+
+            <!-- אזור כפתורי שליטה בשעון (התחל / עצור) -->
+            <div id="controls-running-area">
+                <button 
+                    id="btn-start-stop" 
+                    type="button" 
+                    class="w-full h-16 sm:h-20 rounded-2xl bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] text-white font-black text-2xl sm:text-3xl tracking-wide shadow-lg shadow-emerald-600/25 flex items-center justify-center gap-3 transition-all"
+                >
+                    <svg id="icon-play" class="w-8 h-8" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M8 5v14l11-7z"/>
+                    </svg>
+                    <svg id="icon-stop" class="w-8 h-8 hidden" fill="currentColor" viewBox="0 0 24 24">
+                        <rect x="6" y="6" width="12" height="12" rx="2"/>
+                    </svg>
+                    <span id="text-start-stop">התחל</span>
+                </button>
+            </div>
+
+            <!-- אזור אישור תוצאה (מופיע רק לאחר עצירת השעון) -->
+            <div id="controls-confirm-area" class="hidden flex-col gap-3 bg-slate-900/95 border-2 border-orange-500/50 rounded-2xl p-3.5 animate-fade-in">
+                <div class="flex items-center justify-between text-sm">
+                    <span class="text-slate-300 font-semibold">אישור תוצאה ל<span id="confirm-round-label" class="text-orange-400 font-bold">סבב 1</span>:</span>
+                    <span id="confirm-time-preview" class="font-mono font-extrabold text-lg text-emerald-400" dir="ltr">00:00.00</span>
+                </div>
+                
+                <div class="grid grid-cols-2 gap-3">
+                    <button 
+                        id="btn-accept-result" 
+                        type="button" 
+                        class="h-14 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-black text-xl flex items-center justify-center gap-2 shadow-md shadow-emerald-600/20 transition-all"
+                    >
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" />
+                        </svg>
+                        <span>קבל</span>
+                    </button>
+
+                    <button 
+                        id="btn-discard-result" 
+                        type="button" 
+                        class="h-14 rounded-xl bg-slate-800 hover:bg-rose-900/70 border border-slate-700 hover:border-rose-500/50 active:scale-95 text-slate-200 hover:text-rose-200 font-bold text-xl flex items-center justify-center gap-2 transition-all"
+                    >
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                        <span>בטל</span>
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- כפתורי ניהול סבב וסיום אימון -->
+        <section class="grid grid-cols-2 gap-3">
+            <button 
+                id="btn-new-round" 
+                type="button" 
+                class="h-13 py-3 px-4 rounded-2xl bg-slate-800 hover:bg-slate-700 border border-slate-700 active:scale-95 text-orange-400 font-extrabold text-base sm:text-lg flex items-center justify-center gap-2 shadow-md transition-all"
+            >
+                <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4" />
+                </svg>
+                <span>סבב חדש</span>
+            </button>
+
+            <button 
+                id="btn-finish-session" 
+                type="button" 
+                class="h-13 py-3 px-4 rounded-2xl bg-gradient-to-l from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500 active:scale-95 text-white font-extrabold text-base sm:text-lg flex items-center justify-center gap-2 shadow-lg shadow-orange-600/20 transition-all"
+            >
+                <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span>סיים והצג דירוג</span>
+            </button>
+        </section>
+
+        <!-- כרטיס טבלת הדירוג החיה -->
+        <section class="bg-ninja-card border border-slate-800 rounded-3xl p-4 shadow-xl flex-1 flex flex-col">
+            <div class="flex items-center justify-between mb-3">
+                <div>
+                    <h2 class="text-lg font-black text-white flex items-center gap-2">
+                        <span>טבלת דירוג חיה</span>
+                        <span id="live-table-round-tag" class="text-xs font-bold px-2 py-0.5 rounded-md bg-slate-800 text-orange-400">ממוין לפי סבב 1</span>
+                    </h2>
+                    <p class="text-xs text-slate-400">הזמן הקצר ביותר מדורג במקום הראשון</p>
+                </div>
+                <span id="athletes-count-badge" class="text-xs font-bold bg-slate-800 text-slate-300 px-2.5 py-1 rounded-full">
+                    0 מתאמנים
+                </span>
+            </div>
+
+            <!-- מצב ריק כשאין עדיין תוצאות -->
+            <div id="empty-table-state" class="py-10 px-4 text-center border-2 border-dashed border-slate-800 rounded-2xl my-auto">
+                <div class="text-3xl mb-2">⏱️</div>
+                <p class="text-slate-300 font-bold text-base">עדיין לא נרשמו תוצאות</p>
+                <p class="text-slate-500 text-sm mt-1">הזן או הקלט שם מתאמן, לחץ "התחל" והזנק אותו למסלול!</p>
+            </div>
+
+            <!-- טבלה רספונסיבית עם גלילה אופקית במידת הצורך -->
+            <div id="live-table-wrapper" class="hidden table-container overflow-x-auto rounded-2xl border border-slate-800">
+                <table class="w-full text-right border-collapse">
+                    <thead>
+                        <tr id="live-table-head" class="bg-slate-900/90 text-slate-300 text-xs uppercase border-b border-slate-800">
+                            <!-- עמודות ייווצרו דינמית ב-JS -->
+                        </tr>
+                    </thead>
+                    <tbody id="live-table-body" class="divide-y divide-slate-800/80 text-sm sm:text-base">
+                        <!-- שורות ייווצרו דינמית ב-JS -->
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+
+    <!-- ========================================== -->
+    <!-- מסך 2: מסך סיכום ותוצאות סופיות ("סיים")    -->
+    <!-- ========================================== -->
+    <main id="screen-results" class="hidden flex-1 max-w-2xl w-full mx-auto px-4 py-5 flex flex-col gap-5">
+        
+        <div class="bg-gradient-to-br from-slate-900 via-ninja-card to-slate-900 border border-orange-500/30 rounded-3xl p-5 text-center shadow-xl">
+            <div class="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-orange-500/20 text-3xl mb-2">
+                🏆
+            </div>
+            <h2 class="text-2xl sm:text-3xl font-black text-white">סיכום תוצאות האימון</h2>
+            <p id="results-subtitle" class="text-slate-400 text-sm mt-1">דירוג סופי מ-1 ועד האחרון לכל סבב</p>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-5">
+                <button 
+                    id="btn-copy-whatsapp" 
+                    type="button" 
+                    class="h-13 py-3 px-4 rounded-2xl bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-extrabold text-base flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/20 transition-all"
+                >
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
+                    </svg>
+                    <span id="text-copy-whatsapp">העתק תוצאות לוואטסאפ</span>
+                </button>
+
+                <button 
+                    id="btn-back-to-training" 
+                    type="button" 
+                    class="h-13 py-3 px-4 rounded-2xl bg-slate-800 hover:bg-slate-700 border border-slate-700 active:scale-95 text-slate-200 font-bold text-base flex items-center justify-center gap-2 transition-all"
+                >
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                    </svg>
+                    <span>חזרה לאימון</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- מיכל כרטיסי התוצאות לכל סבב -->
+        <div id="results-rounds-container" class="flex flex-col gap-5"></div>
+
+    </main>
+
+    <!-- ========================================== -->
+    <!-- מודאל אישור מותאם אישית (ללא window.confirm) -->
+    <!-- ========================================== -->
+    <div id="custom-modal" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-ninja-card border border-slate-700 rounded-3xl max-w-sm w-full p-6 shadow-2xl text-center">
+            <div id="modal-icon" class="w-12 h-12 rounded-2xl bg-rose-500/20 text-rose-400 flex items-center justify-center mx-auto mb-3 text-2xl">
+                ⚠️
+            </div>
+            <h3 id="modal-title" class="text-xl font-black text-white mb-2">איפוס נתוני אימון</h3>
+            <p id="modal-message" class="text-slate-300 text-sm leading-relaxed mb-6">
+                האם אתה בטוח שברצונך למחוק את כל הסבבים והתוצאות ולהתחיל אימון חדש מאפס?
+            </p>
+            <div class="grid grid-cols-2 gap-3">
+                <button id="modal-btn-confirm" type="button" class="h-12 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold transition-colors">
+                    כן, אפס הכל
+                </button>
+                <button id="modal-btn-cancel" type="button" class="h-12 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold transition-colors">
+                    ביטול
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- טקסט מוסתר לטובת העתקה אמינה ללוח -->
+    <textarea id="clipboard-helper" class="fixed -top-96 left-0 opacity-0 pointer-events-none" readonly></textarea>
+
+    <script>
+        /**
+         * נינג'ה טיימר - לוגיקה מלאה וניהול מצב (State Management)
+         * כולל: שעון עצר מדויק, זיהוי קולי בעברית, ניהול סבבים, דירוג אוטומטי ושמירה מקומית.
+         */
+
+        // מפתח שמירה ב-LocalStorage
+        const STORAGE_KEY = 'ninja_coach_timer_v1';
+
+        // מצב האפליקציה (State)
+        let appState = {
+            currentRound: 1,      // מספר הסבב הפעיל כרגע (מתחיל ב-1)
+            totalRounds: 1,       // סך כל הסבבים שנפתחו באימון
+            // מבנה נתוני המתאמנים:
+            // { id: string, name: string, rounds: { [roundNum: number]: number (ms) } }
+            athletes: []
+        };
+
+        // משתני שעון העצר (Stopwatch)
+        let timerState = {
+            status: 'idle',       // 'idle' | 'running' | 'stopped'
+            startTime: 0,
+            elapsedMs: 0,
+            rafId: null
+        };
+
+        // משתני זיהוי קולי (Web Speech API)
+        let speechRecognition = null;
+        let isListening = false;
+
+        // הפניות לאלמנטים ב-DOM
+        const els = {
+            // כותרת וניווט
+            headerRoundBadge: document.getElementById('header-round-badge'),
+            wakeLockBadge: document.getElementById('wake-lock-badge'),
+            btnOpenReset: document.getElementById('btn-open-reset'),
+
+            // מסכים
+            screenTraining: document.getElementById('screen-training'),
+            screenResults: document.getElementById('screen-results'),
+
+            // הזנת שם ומיקרופון
+            nameInput: document.getElementById('athlete-name-input'),
+            btnClearName: document.getElementById('btn-clear-name'),
+            btnMic: document.getElementById('btn-mic'),
+            speechStatusText: document.getElementById('speech-status-text'),
+            quickAthletesWrapper: document.getElementById('quick-athletes-wrapper'),
+            quickAthletesList: document.getElementById('quick-athletes-list'),
+
+            // שעון עצר וכפתורי בקרה
+            timerStatusPill: document.getElementById('timer-status-pill'),
+            timerDisplay: document.getElementById('timer-display'),
+            controlsRunningArea: document.getElementById('controls-running-area'),
+            btnStartStop: document.getElementById('btn-start-stop'),
+            iconPlay: document.getElementById('icon-play'),
+            iconStop: document.getElementById('icon-stop'),
+            textStartStop: document.getElementById('text-start-stop'),
+
+            // אזור אישור תוצאה
+            controlsConfirmArea: document.getElementById('controls-confirm-area'),
+            confirmRoundLabel: document.getElementById('confirm-round-label'),
+            confirmTimePreview: document.getElementById('confirm-time-preview'),
+            btnAcceptResult: document.getElementById('btn-accept-result'),
+            btnDiscardResult: document.getElementById('btn-discard-result'),
+
+            // ניהול סבבים וסיום
+            btnNewRound: document.getElementById('btn-new-round'),
+            btnFinishSession: document.getElementById('btn-finish-session'),
+
+            // טבלה חיה
+            liveTableRoundTag: document.getElementById('live-table-round-tag'),
+            athletesCountBadge: document.getElementById('athletes-count-badge'),
+            emptyTableState: document.getElementById('empty-table-state'),
+            liveTableWrapper: document.getElementById('live-table-wrapper'),
+            liveTableHead: document.getElementById('live-table-head'),
+            liveTableBody: document.getElementById('live-table-body'),
+
+            // מסך תוצאות
+            resultsSubtitle: document.getElementById('results-subtitle'),
+            resultsRoundsContainer: document.getElementById('results-rounds-container'),
+            btnCopyWhatsapp: document.getElementById('btn-copy-whatsapp'),
+            textCopyWhatsapp: document.getElementById('text-copy-whatsapp'),
+            btnBackToTraining: document.getElementById('btn-back-to-training'),
+
+            // מודאל וכלים
+            customModal: document.getElementById('custom-modal'),
+            modalTitle: document.getElementById('modal-title'),
+            modalMessage: document.getElementById('modal-message'),
+            modalBtnConfirm: document.getElementById('modal-btn-confirm'),
+            modalBtnCancel: document.getElementById('modal-btn-cancel'),
+            toastContainer: document.getElementById('toast-container'),
+            clipboardHelper: document.getElementById('clipboard-helper')
+        };
+
+        // ==========================================
+        // אתחול האפליקציה
+        // ==========================================
+        window.addEventListener('DOMContentLoaded', () => {
+            loadStateFromStorage();
+            initSpeechRecognition();
+            initWakeLock();
+            bindEvents();
+            renderAll();
+        });
+
+        // ==========================================
+        // שמירה וטעינה מ-LocalStorage
+        // ==========================================
+        function saveStateToStorage() {
+            try {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(appState));
+            } catch (err) {
+                console.warn('שגיאה בשמירה לזיכרון המקומי:', err);
+            }
+        }
+
+        function loadStateFromStorage() {
+            try {
+                const raw = localStorage.getItem(STORAGE_KEY);
+                if (raw) {
+                    const parsed = JSON.parse(raw);
+                    if (parsed && Array.isArray(parsed.athletes)) {
+                        appState.currentRound = parsed.currentRound || 1;
+                        appState.totalRounds = parsed.totalRounds || 1;
+                        appState.athletes = parsed.athletes;
+                    }
+                }
+            } catch (err) {
+                console.warn('שגיאה בטעינה מהזיכרון המקומי:', err);
+            }
+        }
+
+        // ==========================================
+        // מניעת כיבוי מסך אוטומטי (Wake Lock API)
+        // ==========================================
+        async function initWakeLock() {
+            if ('wakeLock' in navigator) {
+                try {
+                    const requestLock = async () => {
+                        if (document.visibilityState === 'visible') {
+                            await navigator.wakeLock.request('screen');
+                            els.wakeLockBadge.classList.remove('hidden');
+                        }
+                    };
+                    await requestLock();
+                    document.addEventListener('visibilitychange', requestLock);
+                } catch (e) {
+                    // דפדפנים מסוימים חוסמים WakeLock ללא אינטראקציה ראשונה - מתעלמים בשקט
+                }
+            }
+        }
+
+        // ==========================================
+        // פורמט תצוגת זמן (00:00.00)
+        // ==========================================
+        function formatTime(ms) {
+            if (typeof ms !== 'number' || isNaN(ms) || ms < 0) return '00:00.00';
+            const totalCentiseconds = Math.floor(ms / 10);
+            const centiseconds = totalCentiseconds % 100;
+            const totalSeconds = Math.floor(totalCentiseconds / 100);
+            const seconds = totalSeconds % 60;
+            const minutes = Math.floor(totalSeconds / 60);
+
+            const mm = String(minutes).padStart(2, '0');
+            const ss = String(seconds).padStart(2, '0');
+            const cc = String(centiseconds).padStart(2, '0');
+            return `${mm}:${ss}.${cc}`;
+        }
+
+        // ==========================================
+        // הודעות צפות (Toast)
+        // ==========================================
+        function showToast(message, type = 'info') {
+            const toast = document.createElement('div');
+            const colors = {
+                info: 'bg-slate-800 border-slate-600 text-white',
+                success: 'bg-emerald-900/95 border-emerald-500 text-emerald-100',
+                warning: 'bg-amber-900/95 border-amber-500 text-amber-100',
+                error: 'bg-rose-900/95 border-rose-500 text-rose-100'
+            };
+
+            toast.className = `${colors[type] || colors.info} border px-4 py-3 rounded-2xl shadow-2xl text-sm font-bold text-center transition-all duration-300 transform translate-y-0 opacity-100`;
+            toast.textContent = message;
+            els.toastContainer.appendChild(toast);
+
+            setTimeout(() => {
+                toast.classList.add('opacity-0', '-translate-y-2');
+                setTimeout(() => toast.remove(), 300);
+            }, 2600);
+        }
+
+        // ==========================================
+        // זיהוי קולי בעברית (Web Speech API)
+        // ==========================================
+        function initSpeechRecognition() {
+            const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
+            if (!SpeechRecognitionAPI) {
+                els.btnMic.title = 'הדפדפן אינו תומך בזיהוי קולי';
+                return;
+            }
+
+            speechRecognition = new SpeechRecognitionAPI();
+            speechRecognition.lang = 'he-IL';
+            speechRecognition.interimResults = true;
+            speechRecognition.maxAlternatives = 1;
+            speechRecognition.continuous = false;
+
+            speechRecognition.onstart = () => {
+                isListening = true;
+                els.btnMic.classList.add('mic-listening');
+                els.speechStatusText.textContent = 'מאזין... אמור שם מתאמן';
+                els.nameInput.placeholder = 'מאזין לקולך...';
+            };
+
+            speechRecognition.onresult = (event) => {
+                let transcript = '';
+                for (let i = event.resultIndex; i < event.results.length; i++) {
+                    transcript += event.results[i][0].transcript;
+                }
+                // ניקוי תווים מיותרים כמו נקודה בסוף משפט
+                const cleanedName = transcript.replace(/[.,!?"]/g, '').trim();
+                if (cleanedName) {
+                    els.nameInput.value = cleanedName;
+                    updateClearButtonVisibility();
+                }
+            };
+
+            speechRecognition.onerror = (event) => {
+                stopSpeechListening();
+                if (event.error === 'not-allowed') {
+                    showToast('אין הרשאת מיקרופון. אנא אשר גישה בהגדרות הדפדפן או הקלד ידנית.', 'error');
+                } else if (event.error === 'no-speech') {
+                    showToast('לא זוהה דיבור. נסה שוב או הקלד את השם.', 'warning');
+                } else if (event.error !== 'aborted') {
+                    showToast('שגיאה בזיהוי הקולי. ניתן להקליד ידנית.', 'warning');
+                }
+            };
+
+            speechRecognition.onend = () => {
+                stopSpeechListening();
+                if (els.nameInput.value.trim()) {
+                    showToast(`נקלט השם: ${els.nameInput.value.trim()}`, 'success');
+                }
+            };
+        }
+
+        function toggleSpeechRecognition() {
+            if (!speechRecognition) {
+                showToast('הדפדפן שלך אינו תומך בזיהוי קולי. אנא הקלד את השם.', 'warning');
+                els.nameInput.focus();
+                return;
+            }
+
+            if (isListening) {
+                try {
+                    speechRecognition.stop();
+                } catch (e) {}
+                stopSpeechListening();
+            } else {
+                try {
+                    speechRecognition.start();
+                } catch (e) {
+                    showToast('המיקרופון כבר פעיל או אינו זמין כרגע.', 'warning');
+                }
+            }
+        }
+
+        function stopSpeechListening() {
+            isListening = false;
+            els.btnMic.classList.remove('mic-listening');
+            els.speechStatusText.textContent = '';
+            els.nameInput.placeholder = 'הקלד או הקלט שם...';
+        }
+
+        // ==========================================
+        // לוגיקת שעון העצר (Stopwatch)
+        // ==========================================
+        function updateTimerLoop() {
+            if (timerState.status !== 'running') return;
+            const now = performance.now();
+            timerState.elapsedMs = now - timerState.startTime;
+            els.timerDisplay.textContent = formatTime(timerState.elapsedMs);
+            timerState.rafId = requestAnimationFrame(updateTimerLoop);
+        }
+
+        function handleStartStopClick() {
+            // אם המיקרופון עדיין מאזין בעת ההזנקה - נעצור האזנה אוטומטית
+            if (isListening && speechRecognition) {
+                try { speechRecognition.stop(); } catch (e) {}
+            }
+
+            if (timerState.status === 'idle') {
+                // התחלת מדידה!
+                // הערה: מאפשרים הזנקה גם אם המאמן שכח להקליד שם לפני הלחיצה, ומתריעים בעדינות
+                if (!els.nameInput.value.trim()) {
+                    showToast('השעון רץ! אל תשכח להזין שם מתאמן לפני האישור.', 'warning');
+                }
+
+                timerState.status = 'running';
+                timerState.startTime = performance.now();
+                timerState.elapsedMs = 0;
+
+                // עדכון ממשק למצב ריצה
+                els.timerStatusPill.textContent = '● במדידה פעילה';
+                els.timerStatusPill.className = 'text-xs font-bold px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 mb-1';
+                els.timerDisplay.classList.remove('text-white', 'text-amber-400');
+                els.timerDisplay.classList.add('text-emerald-400');
+
+                els.btnStartStop.classList.remove('bg-emerald-600', 'hover:bg-emerald-500', 'shadow-emerald-600/25');
+                els.btnStartStop.classList.add('bg-rose-600', 'hover:bg-rose-500', 'shadow-rose-600/30');
+                els.iconPlay.classList.add('hidden');
+                els.iconStop.classList.remove('hidden');
+                els.textStartStop.textContent = 'עצור';
+
+                timerState.rafId = requestAnimationFrame(updateTimerLoop);
+
+            } else if (timerState.status === 'running') {
+                // עצירת מדידה!
+                cancelAnimationFrame(timerState.rafId);
+                timerState.elapsedMs = performance.now() - timerState.startTime;
+                timerState.status = 'stopped';
+
+                els.timerDisplay.textContent = formatTime(timerState.elapsedMs);
+                els.timerDisplay.classList.remove('text-emerald-400');
+                els.timerDisplay.classList.add('text-amber-400');
+
+                els.timerStatusPill.textContent = 'ממתין לאישור תוצאה';
+                els.timerStatusPill.className = 'text-xs font-bold px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-400 mb-1';
+
+                // החלפת כפתור התחל/עצור באזור "קבל / בטל"
+                els.controlsRunningArea.classList.add('hidden');
+                els.controlsConfirmArea.classList.remove('hidden');
+                els.controlsConfirmArea.classList.add('flex');
+
+                els.confirmRoundLabel.textContent = `סבב ${appState.currentRound}`;
+                els.confirmTimePreview.textContent = formatTime(timerState.elapsedMs);
+
+                // אם עדיין אין שם מתאמן, נמקד את הסמן בשדה השם כדי להקל על המאמן
+                if (!els.nameInput.value.trim()) {
+                    els.nameInput.focus();
+                }
+            }
+        }
+
+        function resetStopwatchToIdle() {
+            cancelAnimationFrame(timerState.rafId);
+            timerState.status = 'idle';
+            timerState.startTime = 0;
+            timerState.elapsedMs = 0;
+
+            els.timerDisplay.textContent = '00:00.00';
+            els.timerDisplay.classList.remove('text-emerald-400', 'text-amber-400');
+            els.timerDisplay.classList.add('text-white');
+
+            els.timerStatusPill.textContent = 'מוכן להזנקה';
+            els.timerStatusPill.className = 'text-xs font-bold px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-400 mb-1';
+
+            // החזרת כפתור "התחל"
+            els.controlsConfirmArea.classList.add('hidden');
+            els.controlsConfirmArea.classList.remove('flex');
+            els.controlsRunningArea.classList.remove('hidden');
+
+            els.btnStartStop.classList.remove('bg-rose-600', 'hover:bg-rose-500', 'shadow-rose-600/30');
+            els.btnStartStop.classList.add('bg-emerald-600', 'hover:bg-emerald-500', 'shadow-emerald-600/25');
+            els.iconStop.classList.add('hidden');
+            els.iconPlay.classList.remove('hidden');
+            els.textStartStop.textContent = 'התחל';
+        }
+
+        // ==========================================
+        // קבלת תוצאה או ביטול מדידה
+        // ==========================================
+        function handleAcceptResult() {
+            const rawName = els.nameInput.value.trim();
+            if (!rawName) {
+                showToast('חובה להזין שם מתאמן לפני לחיצה על "קבל"!', 'error');
+                els.nameInput.focus();
+                return;
+            }
+
+            const measuredTime = Math.round(timerState.elapsedMs);
+            const roundNum = appState.currentRound;
+
+            // בדיקה אם המתאמן כבר קיים ברשימה (השוואה לא רגישה לרווחים מיותרים)
+            let athlete = appState.athletes.find(
+                a => a.name.trim().toLowerCase() === rawName.toLowerCase()
+            );
+
+            if (athlete) {
+                // עדכון תוצאה לסבב הנוכחי עבור מתאמן קיים
+                const hadPreviousInRound = typeof athlete.rounds[roundNum] === 'number';
+                athlete.rounds[roundNum] = measuredTime;
+                athlete.name = rawName; // עדכון כתיב השם האחרון
+                showToast(
+                    hadPreviousInRound 
+                        ? `עודכנה תוצאה עבור ${rawName} בסבב ${roundNum}` 
+                        : `נרשמה תוצאה עבור ${rawName} בסבב ${roundNum}`,
+                    'success'
+                );
+            } else {
+                // הוספת מתאמן חדש
+                appState.athletes.push({
+                    id: 'ath_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+                    name: rawName,
+                    rounds: {
+                        [roundNum]: measuredTime
+                    }
+                });
+                showToast(`${rawName} נוסף לטבלת הדירוג!`, 'success');
+            }
+
+            // שמירה, איפוס שדה שם ושעון, ורענון טבלה
+            saveStateToStorage();
+            els.nameInput.value = '';
+            updateClearButtonVisibility();
+            resetStopwatchToIdle();
+            renderAll();
+        }
+
+        function handleDiscardResult() {
+            resetStopwatchToIdle();
+            showToast('המדידה בוטלה והשעון אופס.', 'info');
+        }
+
+        // ==========================================
+        // ניהול סבבים (סבב חדש)
+        // ==========================================
+        function handleNewRound() {
+            if (timerState.status !== 'idle') {
+                showToast('יש לסיים או לבטל את המדידה הנוכחית לפני פתיחת סבב חדש.', 'warning');
+                return;
+            }
+
+            if (appState.athletes.length === 0) {
+                showToast('יש לרשום לפחות תוצאה אחת בסבב 1 לפני פתיחת סבב חדש.', 'warning');
+                return;
+            }
+
+            appState.currentRound += 1;
+            if (appState.currentRound > appState.totalRounds) {
+                appState.totalRounds = appState.currentRound;
+            }
+
+            saveStateToStorage();
+            renderAll();
+            showToast(`נפתח סבב ${appState.currentRound}! עמודה חדשה נוספה לטבלה.`, 'success');
+        }
+
+        // ==========================================
+        // רינדור טבלת הדירוג החיה ובחירה מהירה
+        // ==========================================
+        function renderAll() {
+            // עדכון תגיות סבב נוכחי
+            els.headerRoundBadge.textContent = `סבב ${appState.currentRound}`;
+            els.liveTableRoundTag.textContent = `ממוין לפי סבב ${appState.currentRound}`;
+            els.athletesCountBadge.textContent = `${appState.athletes.length} מתאמנים`;
+
+            renderQuickAthleteChips();
+            renderLiveTable();
+        }
+
+        function renderQuickAthleteChips() {
+            if (appState.athletes.length === 0) {
+                els.quickAthletesWrapper.classList.add('hidden');
+                return;
+            }
+
+            els.quickAthletesWrapper.classList.remove('hidden');
+            els.quickAthletesList.innerHTML = '';
+
+            // מציגים שמות מתאמנים (מדגישים את מי שעוד לא רץ בסבב הנוכחי)
+            const sortedForChips = [...appState.athletes].sort((a, b) => {
+                const aDone = typeof a.rounds[appState.currentRound] === 'number';
+                const bDone = typeof b.rounds[appState.currentRound] === 'number';
+                if (aDone !== bDone) return aDone ? 1 : -1;
+                return a.name.localeCompare(b.name, 'he');
+            });
+
+            sortedForChips.forEach(athlete => {
+                const doneInCurrent = typeof athlete.rounds[appState.currentRound] === 'number';
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = doneInCurrent
+                    ? 'px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-800/60 text-slate-400 border border-slate-700/60 hover:text-white transition-colors'
+                    : 'px-3 py-1 rounded-lg text-xs font-bold bg-orange-500/15 text-orange-300 border border-orange-500/30 hover:bg-orange-500/25 active:scale-95 transition-all';
+                btn.textContent = doneInCurrent ? `✓ ${athlete.name}` : athlete.name;
+                btn.onclick = () => {
+                    els.nameInput.value = athlete.name;
+                    updateClearButtonVisibility();
+                    showToast(`נבחר: ${athlete.name}`, 'info');
+                };
+                els.quickAthletesList.appendChild(btn);
+            });
+        }
+
+        function renderLiveTable() {
+            if (appState.athletes.length === 0) {
+                els.emptyTableState.classList.remove('hidden');
+                els.liveTableWrapper.classList.add('hidden');
+                return;
+            }
+
+            els.emptyTableState.classList.add('hidden');
+            els.liveTableWrapper.classList.remove('hidden');
+
+            // בניית כותרות הטבלה: מקום | שם מתאמן | סבב 1 | סבב 2 ...
+            let headHtml = `
+                <th class="py-3 px-3 font-extrabold text-center w-14">#</th>
+                <th class="py-3 px-3 font-extrabold text-right min-w-[110px]">מתאמן</th>
+            `;
+            for (let r = 1; r <= appState.totalRounds; r++) {
+                const isCurrent = r === appState.currentRound;
+                headHtml += `
+                    <th class="py-3 px-3 font-extrabold text-left font-sans ${isCurrent ? 'text-orange-400 bg-orange-500/10' : 'text-slate-400'}">
+                        סבב ${r}
+                    </th>
+                `;
+            }
+            els.liveTableHead.innerHTML = headHtml;
+
+            // מיון המתאמנים לפי הסבב הנוכחי:
+            // מי שיש לו תוצאה בסבב הנוכחי ממוין מהזמן הקצר ביותר לארוך ביותר (מקום 1 למעלה).
+            // מי שעדיין לא ביצע את הסבב הנוכחי מופיע מתחתיהם.
+            const currentR = appState.currentRound;
+            const sortedAthletes = [...appState.athletes].sort((a, b) => {
+                const timeA = a.rounds[currentR];
+                const timeB = b.rounds[currentR];
+                const hasA = typeof timeA === 'number';
+                const hasB = typeof timeB === 'number';
+
+                if (hasA && hasB) return timeA - timeB;
+                if (hasA && !hasB) return -1;
+                if (!hasA && hasB) return 1;
+                // אם לשניהם אין תוצאה בסבב הנוכחי, נמיין לפי סבב קודם או שם
+                return a.name.localeCompare(b.name, 'he');
+            });
+
+            // בניית שורות הטבלה
+            let bodyHtml = '';
+            let rankCounter = 0;
+
+            sortedAthletes.forEach((athlete) => {
+                const hasCurrentTime = typeof athlete.rounds[currentR] === 'number';
+                if (hasCurrentTime) {
+                    rankCounter++;
+                }
+
+                // עיצוב תגית מקום (1, 2, 3...)
+                let rankBadge = '<span class="text-slate-500 font-bold">-</span>';
+                if (hasCurrentTime) {
+                    if (rankCounter === 1) {
+                        rankBadge = '<span class="inline-flex items-center justify-center w-7 h-7 rounded-full bg-amber-400/20 text-amber-300 border border-amber-400/50 font-black text-sm">1</span>';
+                    } else if (rankCounter === 2) {
+                        rankBadge = '<span class="inline-flex items-center justify-center w-7 h-7 rounded-full bg-slate-300/20 text-slate-200 border border-slate-300/40 font-black text-sm">2</span>';
+                    } else if (rankCounter === 3) {
+                        rankBadge = '<span class="inline-flex items-center justify-center w-7 h-7 rounded-full bg-orange-600/25 text-orange-300 border border-orange-500/40 font-black text-sm">3</span>';
+                    } else {
+                        rankBadge = `<span class="font-bold text-slate-400">${rankCounter}</span>`;
+                    }
+                }
+
+                let rowCells = `
+                    <td class="py-3 px-3 text-center">${rankBadge}</td>
+                    <td class="py-3 px-3 font-bold text-white whitespace-nowrap">${escapeHtml(athlete.name)}</td>
+                `;
+
+                for (let r = 1; r <= appState.totalRounds; r++) {
+                    const t = athlete.rounds[r];
+                    const isCurrentCol = r === currentR;
+                    if (typeof t === 'number') {
+                        rowCells += `
+                            <td class="py-3 px-3 text-left font-mono font-bold tabular-nums whitespace-nowrap ${isCurrentCol ? 'text-emerald-400 bg-orange-500/5' : 'text-slate-300'}" dir="ltr">
+                                ${formatTime(t)}
+                            </td>
+                        `;
+                    } else {
+                        rowCells += `
+                            <td class="py-3 px-3 text-left text-slate-600 font-mono text-xs ${isCurrentCol ? 'bg-orange-500/5' : ''}" dir="ltr">
+                                --:--.--
+                            </td>
+                        `;
+                    }
+                }
+
+                bodyHtml += `<tr class="hover:bg-slate-800/40 transition-colors">${rowCells}</tr>`;
+            });
+
+            els.liveTableBody.innerHTML = bodyHtml;
+        }
+
+        // ==========================================
+        // מסך סיכום ותוצאות ("סיים")
+        // ==========================================
+        function showResultsScreen() {
+            if (timerState.status !== 'idle') {
+                showToast('יש לעצור ולאשר או לבטל את המדידה הפעילה לפני המעבר לסיכום.', 'warning');
+                return;
+            }
+
+            if (appState.athletes.length === 0) {
+                showToast('עדיין אין תוצאות להצגה. מדוד לפחות מתאמן אחד!', 'warning');
+                return;
+            }
+
+            els.screenTraining.classList.add('hidden');
+            els.screenResults.classList.remove('hidden');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+
+            renderResultsSummary();
+        }
+
+        function showTrainingScreen() {
+            els.screenResults.classList.add('hidden');
+            els.screenTraining.classList.remove('hidden');
+            renderAll();
+        }
+
+        function renderResultsSummary() {
+            els.resultsSubtitle.textContent = `סה"כ ${appState.totalRounds} סבבים • ${appState.athletes.length} מתאמנים`;
+            els.resultsRoundsContainer.innerHTML = '';
+
+            for (let r = 1; r <= appState.totalRounds; r++) {
+                // סינון ומיון משתתפים שיש להם תוצאה בסבב r מהזמן הקצר לארוך
+                const roundParticipants = appState.athletes
+                    .filter(a => typeof a.rounds[r] === 'number')
+                    .map(a => ({ name: a.name, time: a.rounds[r] }))
+                    .sort((a, b) => a.time - b.time);
+
+                const card = document.createElement('div');
+                card.className = 'bg-ninja-card border border-slate-800 rounded-3xl p-4 sm:p-5 shadow-xl';
+
+                let rowsHtml = '';
+                if (roundParticipants.length === 0) {
+                    rowsHtml = `<p class="text-slate-500 text-sm py-4 text-center">לא נרשמו תוצאות בסבב זה</p>`;
+                } else {
+                    roundParticipants.forEach((p, idx) => {
+                        const rank = idx + 1;
+                        let medal = `<span class="w-7 h-7 rounded-full bg-slate-800 text-slate-300 font-bold text-sm inline-flex items-center justify-center">${rank}</span>`;
+                        let rowBg = 'bg-slate-900/50 border-slate-800/80';
+
+                        if (rank === 1) {
+                            medal = `<span class="text-xl">🥇</span>`;
+                            rowBg = 'bg-gradient-to-l from-amber-500/15 to-slate-900/80 border-amber-500/40';
+                        } else if (rank === 2) {
+                            medal = `<span class="text-xl">🥈</span>`;
+                            rowBg = 'bg-gradient-to-l from-slate-300/15 to-slate-900/80 border-slate-400/30';
+                        } else if (rank === 3) {
+                            medal = `<span class="text-xl">🥉</span>`;
+                            rowBg = 'bg-gradient-to-l from-orange-600/15 to-slate-900/80 border-orange-500/30';
+                        }
+
+                        rowsHtml += `
+                            <div class="flex items-center justify-between px-3.5 py-3 rounded-2xl border ${rowBg}">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-8 text-center shrink-0">${medal}</div>
+                                    <div>
+                                        <div class="font-extrabold text-white text-base sm:text-lg">${escapeHtml(p.name)}</div>
+                                        <div class="text-[11px] text-slate-400 font-semibold">מקום ${rank}</div>
+                                    </div>
+                                </div>
+                                <div class="font-mono font-black text-lg sm:text-xl text-emerald-400 tabular-nums" dir="ltr">
+                                    ${formatTime(p.time)}
+                                </div>
+                            </div>
+                        `;
+                    });
+                }
+
+                card.innerHTML = `
+                    <div class="flex items-center justify-between mb-3 pb-2 border-b border-slate-800">
+                        <h3 class="text-xl font-black text-orange-400">סבב ${r}</h3>
+                        <span class="text-xs font-bold text-slate-400 bg-slate-800 px-2.5 py-1 rounded-full">
+                            ${roundParticipants.length} מתאמנים
+                        </span>
+                    </div>
+                    <div class="flex flex-col gap-2">
+                        ${rowsHtml}
+                    </div>
+                `;
+
+                els.resultsRoundsContainer.appendChild(card);
+            }
+        }
+
+        // ==========================================
+        // העתקת תוצאות מעוצבות לוואטסאפ
+        // ==========================================
+        function copyResultsToClipboard() {
+            let text = `🥷 *תוצאות אימון נינג'ה* ⏱️\n`;
+            text += `━━━━━━━━━━━━━━━\n\n`;
+
+            for (let r = 1; r <= appState.totalRounds; r++) {
+                const roundParticipants = appState.athletes
+                    .filter(a => typeof a.rounds[r] === 'number')
+                    .map(a => ({ name: a.name, time: a.rounds[r] }))
+                    .sort((a, b) => a.time - b.time);
+
+                if (roundParticipants.length === 0) continue;
+
+                text += `🔥 *סבב ${r}:*\n`;
+                roundParticipants.forEach((p, idx) => {
+                    const rank = idx + 1;
+                    const prefix = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : `${rank}.`;
+                    text += `${prefix} ${p.name} - ${formatTime(p.time)}\n`;
+                });
+                text += `\n`;
+            }
+
+            // שימוש ב-execCommand('copy') להבטחת תאימות מלאה בכל סביבת Iframe ומובייל
+            els.clipboardHelper.value = text.trim();
+            els.clipboardHelper.select();
+            els.clipboardHelper.setSelectionRange(0, 99999);
+
+            try {
+                document.execCommand('copy');
+                els.textCopyWhatsapp.textContent = 'הועתק ללוח בהצלחה! ✓';
+                showToast('התוצאות הועתקו! אפשר להדביק בוואטסאפ.', 'success');
+                setTimeout(() => {
+                    els.textCopyWhatsapp.textContent = 'העתק תוצאות לוואטסאפ';
+                }, 2500);
+            } catch (err) {
+                showToast('לא ניתן היה להעתיק אוטומטית.', 'error');
+            }
+        }
+
+        // ==========================================
+        // איפוס נתונים ומודאל אישור מותאם אישית
+        // ==========================================
+        function openResetModal() {
+            els.customModal.classList.remove('hidden');
+        }
+
+        function closeResetModal() {
+            els.customModal.classList.add('hidden');
+        }
+
+        function confirmFullReset() {
+            appState = {
+                currentRound: 1,
+                totalRounds: 1,
+                athletes: []
+            };
+            saveStateToStorage();
+            els.nameInput.value = '';
+            updateClearButtonVisibility();
+            resetStopwatchToIdle();
+            closeResetModal();
+
+            // חזרה למסך אימון אם היינו במסך סיכום
+            els.screenResults.classList.add('hidden');
+            els.screenTraining.classList.remove('hidden');
+
+            renderAll();
+            showToast('האימון אופס בהצלחה. מוכן לסבב 1!', 'info');
+        }
+
+        // ==========================================
+        // פונקציות עזר וחיבור אירועים (Event Listeners)
+        // ==========================================
+        function escapeHtml(str) {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+
+        function updateClearButtonVisibility() {
+            if (els.nameInput.value.length > 0) {
+                els.btnClearName.classList.remove('hidden');
+            } else {
+                els.btnClearName.classList.add('hidden');
+            }
+        }
+
+        function bindEvents() {
+            // הזנת שם וניקוי
+            els.nameInput.addEventListener('input', updateClearButtonVisibility);
+            els.btnClearName.addEventListener('click', () => {
+                els.nameInput.value = '';
+                updateClearButtonVisibility();
+                els.nameInput.focus();
+            });
+
+            // מיקרופון
+            els.btnMic.addEventListener('click', toggleSpeechRecognition);
+
+            // שעון עצר
+            els.btnStartStop.addEventListener('click', handleStartStopClick);
+            els.btnAcceptResult.addEventListener('click', handleAcceptResult);
+            els.btnDiscardResult.addEventListener('click', handleDiscardResult);
+
+            // ניהול סבבים וסיום
+            els.btnNewRound.addEventListener('click', handleNewRound);
+            els.btnFinishSession.addEventListener('click', showResultsScreen);
+            els.btnBackToTraining.addEventListener('click', showTrainingScreen);
+            els.btnCopyWhatsapp.addEventListener('click', copyResultsToClipboard);
+
+            // מודאל איפוס
+            els.btnOpenReset.addEventListener('click', openResetModal);
+            els.modalBtnCancel.addEventListener('click', closeResetModal);
+            els.modalBtnConfirm.addEventListener('click', confirmFullReset);
+            els.customModal.addEventListener('click', (e) => {
+                if (e.target === els.customModal) closeResetModal();
+            });
+        }
+    </script>
+</body>
+</html>
